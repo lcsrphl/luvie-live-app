@@ -1,54 +1,71 @@
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1">
-  <title>Luviê Live</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #f8f5f2;
-      margin: 0;
-      padding: 24px;
-      color: #302724;
-    }
-    main { max-width: 600px; margin: auto; }
-    h1 { text-align: center; }
-    .card {
-      background: white;
-      border-radius: 14px;
-      padding: 20px;
-      margin-top: 16px;
-    }
-    button {
-      background: #302724;
-      color: white;
-      padding: 14px;
-      border: 0;
-      border-radius: 8px;
-      width: 100%;
-      font-size: 16px;
-    }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Luviê Live | Importar peças</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main>
     <h1>Luviê Live</h1>
-    <div class="card">
-      <h2>Controle da Live</h2>
-      <p>Status: aguardando configuração</p>
-      <button disabled>Iniciar leitura</button>
-    </div>
-    <div class="card">
-      <h2>Peças cadastradas</h2>
-      <p>Nenhuma peça cadastrada.</p>
-    </div>
-    <div class="card">
-      <h2>Pedidos recebidos</h2>
-      <p>Nenhum pedido ainda.</p>
-    </div>
+    <p class="muted">Cadastro de peças por arquivo TXT</p>
+
+    <section id="loginCard" class="card">
+      <h2>Entrar no painel</h2>
+
+      <label for="email">E-mail</label>
+      <input id="email" type="email"
+        autocomplete="username"
+        placeholder="Seu e-mail administrativo">
+
+      <label for="password">Senha</label>
+      <input id="password" type="password"
+        autocomplete="current-password"
+        placeholder="Sua senha">
+
+      <button id="login">Entrar</button>
+    </section>
+
+    <section id="appCard" class="hidden">
+      <div class="line">
+        <p id="userLabel" class="muted"></p>
+        <button id="logout" class="secondary">Sair</button>
+      </div>
+
+      <div class="card">
+        <h2>Importar peças</h2>
+        <p class="muted">
+          Selecione o TXT que contém Código, Descrição e Preço.
+        </p>
+
+        <input id="file" type="file" accept=".txt,text/plain">
+
+        <div class="line">
+          <strong id="count">Nenhum arquivo selecionado</strong>
+          <span id="total"></span>
+        </div>
+
+        <div id="preview"></div>
+
+        <div class="buttons actions">
+          <button id="save" disabled>
+            Cadastrar peças no Firebase
+          </button>
+          <button id="clear" class="secondary">Limpar</button>
+        </div>
+      </div>
+    </section>
+
+    <p id="message" role="status"></p>
   </main>
+
+  <script src="/__/firebase/8.10.1/firebase-app.js"></script>
+  <script src="/__/firebase/8.10.1/firebase-auth.js"></script>
+  <script src="/__/firebase/8.10.1/firebase-firestore.js"></script>
+  <script src="/__/firebase/init.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
+
