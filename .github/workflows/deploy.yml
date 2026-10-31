@@ -1,23 +1,25 @@
 
-name: Publicar Firebase Hosting
-
+name: Publicar Luviê Live
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
-
+permissions:
+  contents: read
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar codigo
-        uses: actions/checkout@v4
-
-      - name: Publicar no Firebase
-        uses: FirebaseExtended/action-hosting-deploy@v0
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: luvie-live
-          channelId: live
+          node-version: '22'
+      - name: Autenticar Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+      - name: Instalar dependencias
+        run: npm --prefix functions install --no-audit --no-fund
+      - name: Publicar Firebase
+        run: npx --yes firebase-tools@latest deploy --project luvie-live --only hosting,functions --non-interactive
   
