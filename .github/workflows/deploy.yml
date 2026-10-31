@@ -21,5 +21,7 @@ jobs:
       - name: Instalar dependencias
         run: npm --prefix functions install --no-audit --no-fund
       - name: Publicar Firebase
-        run: npx --yes firebase-tools@latest deploy --project luvie-live --only hosting,functions --non-interactive
+        
+run: npx --yes firebase-tools@latest deploy --project luvie-live --only hosting,functions --non-interactive --force
+
   
