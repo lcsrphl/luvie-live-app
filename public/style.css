@@ -1,0 +1,139 @@
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f6f2ef;
+  color: #28211e;
+  font: 15px system-ui, -apple-system, sans-serif;
+}
+
+main {
+  max-width: 720px;
+  margin: auto;
+  padding: 22px;
+}
+
+h1 {
+  margin: 8px 0 4px;
+  font-family: Georgia, serif;
+  font-size: 34px;
+}
+
+h2 {
+  font-size: 20px;
+  margin: 0 0 14px;
+}
+
+p {
+  line-height: 1.5;
+}
+
+.muted {
+  color: #716861;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e8dfd9;
+  border-radius: 18px;
+  padding: 20px;
+  margin: 18px 0;
+  box-shadow: 0 3px 12px #2d211009;
+}
+
+input,
+button {
+  font: inherit;
+}
+
+input[type=email],
+input[type=password],
+input[type=file] {
+  width: 100%;
+  padding: 13px;
+  border: 1px solid #d9cfca;
+  border-radius: 9px;
+  margin: 7px 0 13px;
+}
+
+button {
+  background: #342b28;
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  padding: 13px 17px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: #eee7e3;
+  color: #28211e;
+}
+
+.line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.row {
+  border-bottom: 1px solid #f0e9e5;
+  padding: 11px 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.row:last-child {
+  border: 0;
+}
+
+.row small {
+  display: block;
+  color: #716861;
+  margin-top: 4px;
+}
+
+.price {
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.error {
+  color: #a21b26;
+}
+
+.ok {
+  color: #146640;
+}
+
+.hidden {
+  display: none;
+}
+
+.buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.actions {
+  margin-top: 16px;
+}
+
+#message {
+  white-space: pre-wrap;
+}
+
+label {
+  font-weight: 600;
+}
