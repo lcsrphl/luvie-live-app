@@ -1,12 +1,6 @@
 
 {
-  "hosting": {
-    "public": "public",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ]
-  }
+  "hosting": {"public":"public","ignore":["firebase.json","**/.*","**/node_modules/**"]},
+  "functions": [{"source":"functions","codebase":"default"}],
+  "firestore": {"rules":"firestore.rules"}
 }
-  
