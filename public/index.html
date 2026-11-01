@@ -1,71 +1,12 @@
-
 <!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Luviê Live | Importar peças</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <main>
-    <h1>Luviê Live</h1>
-    <p class="muted">Cadastro de peças por arquivo TXT</p>
-
-    <section id="loginCard" class="card">
-      <h2>Entrar no painel</h2>
-
-      <label for="email">E-mail</label>
-      <input id="email" type="email"
-        autocomplete="username"
-        placeholder="Seu e-mail administrativo">
-
-      <label for="password">Senha</label>
-      <input id="password" type="password"
-        autocomplete="current-password"
-        placeholder="Sua senha">
-
-      <button id="login">Entrar</button>
-    </section>
-
-    <section id="appCard" class="hidden">
-      <div class="line">
-        <p id="userLabel" class="muted"></p>
-        <button id="logout" class="secondary">Sair</button>
-      </div>
-
-      <div class="card">
-        <h2>Importar peças</h2>
-        <p class="muted">
-          Selecione o TXT que contém Código, Descrição e Preço.
-        </p>
-
-        <input id="file" type="file" accept=".txt,text/plain">
-
-        <div class="line">
-          <strong id="count">Nenhum arquivo selecionado</strong>
-          <span id="total"></span>
-        </div>
-
-        <div id="preview"></div>
-
-        <div class="buttons actions">
-          <button id="save" disabled>
-            Cadastrar peças no Firebase
-          </button>
-          <button id="clear" class="secondary">Limpar</button>
-        </div>
-      </div>
-    </section>
-
-    <p id="message" role="status"></p>
-  </main>
-
-  <script src="/__/firebase/8.10.1/firebase-app.js"></script>
-  <script src="/__/firebase/8.10.1/firebase-auth.js"></script>
-  <script src="/__/firebase/8.10.1/firebase-firestore.js"></script>
-  <script src="/__/firebase/init.js"></script>
-  <script src="app.js"></script>
-</body>
-</html>
-
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Luviê Live</title><link rel="stylesheet" href="style.css"></head>
+<body><main>
+<header><h1>Luviê Live</h1><p class="muted">Transmissões, peças e reservas separadas por live</p></header>
+<section id="loginCard" class="card"><h2>Entrar no painel</h2><label for="email">E-mail</label><input id="email" type="email" autocomplete="username"><label for="password">Senha</label><input id="password" type="password" autocomplete="current-password"><button id="login">Entrar</button></section>
+<section id="appCard" class="hidden"><div class="line"><span class="muted" id="userLabel"></span><button class="secondary" id="logout">Sair</button></div>
+<div class="card"><h2>Criar nova live</h2><label for="liveDate">Data da transmissão</label><input type="date" id="liveDate"><button id="createLive">Criar live</button></div>
+<div class="card"><h2>Selecionar live</h2><label for="liveSelect">Transmissões cadastradas</label><select id="liveSelect"></select><button class="secondary" id="refresh">Atualizar</button><p id="liveStatus" class="muted"></p><div class="buttons"><button id="startLive" disabled>Iniciar monitoramento</button><button id="endLive" class="danger" disabled>Encerrar live</button></div></div>
+<div class="card"><h2>Peças desta live</h2><p class="muted">Importe um TXT apenas na live selecionada, antes de iniciá-la. Os códigos podem ser reutilizados em outras lives.</p><input type="file" id="file" accept=".txt,text/plain"><div class="line"><strong id="count">0 peças</strong><span id="total"></span></div><div id="preview"></div><div class="buttons"><button id="save" disabled>Cadastrar peças nesta live</button><button id="clear" class="secondary">Limpar</button></div><p id="importNote" class="muted"></p></div>
+<div class="card"><h2>Reservas desta live</h2><p class="muted">Marque como vendida apenas após confirmar o pagamento por fora. Não há integração com Mercado Pago nesta versão.</p><div id="reservations"></div></div>
+</section><p id="message" role="status"></p></main>
+<script src="/__/firebase/8.10.1/firebase-app.js"></script><script src="/__/firebase/8.10.1/firebase-auth.js"></script><script src="/__/firebase/8.10.1/firebase-firestore.js"></script><script src="/__/firebase/8.10.1/firebase-functions.js"></script><script src="/__/firebase/init.js"></script><script src="app.js"></script></body></html>
