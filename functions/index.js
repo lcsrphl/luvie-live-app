@@ -34,7 +34,7 @@ function signatureOk(req){
  return actual.length===expected.length&&crypto.timingSafeEqual(actual,expected);
 }
 async function sendPrivateReply(commentId,message){
- const response=await fetch(`https://graph.instagram.com/${GRAPH_VERSION}/${encodeURIComponent(IG_ACCOUNT_ID.value())}/messages`,{
+ const response=await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(IG_ACCOUNT_ID.value())}/messages`,{
   method:'POST',headers:{Authorization:`Bearer ${IG_TOKEN.value()}`,'Content-Type':'application/json'},
   body:JSON.stringify({recipient:{comment_id:commentId},message:{text:message}})
  });
