@@ -1,160 +1,199 @@
-const {onRequest, onCall, HttpsError} = require('firebase-functions/v2/https');
-const {onSchedule} = require('firebase-functions/v2/scheduler');
-const {defineSecret} = require('firebase-functions/params');
-const admin = require('firebase-admin');
-const crypto = require('node:crypto');
+'use strict';
+const {onRequest,onCall,HttpsError}=require('firebase-functions/v2/https');
+const {onSchedule}=require('firebase-functions/v2/scheduler');
+const {defineSecret}=require('firebase-functions/params');
+const admin=require('firebase-admin');
+const crypto=require('node:crypto');
 admin.initializeApp();
-const db = admin.firestore();
-const APP_SECRET = defineSecret('META_APP_SECRET');
-const VERIFY_TOKEN = defineSecret('META_VERIFY_TOKEN');
-const IG_TOKEN = defineSecret('META_IG_ACCESS_TOKEN');
-const IG_ACCOUNT_ID = defineSecret('META_IG_ACCOUNT_ID');
-const ADMIN_UID = defineSecret('LUVIE_ADMIN_UID');
-const REGION = 'us-central1';
-const TWO_HOURS = 2 * 60 * 60 * 1000;
-const graphVersion = 'v23.0'; // Atualize conforme a versão ativa do seu app Meta.
-
-function isAdmin(request) {
-  return !!request.auth && request.auth.uid === ADMIN_UID.value();
+const db=admin.firestore();
+const FV=admin.firestore.FieldValue;
+const APP_SECRET=defineSecret('META_APP_SECRET');
+const VERIFY_TOKEN=defineSecret('META_VERIFY_TOKEN');
+const IG_TOKEN=defineSecret('META_IG_ACCESS_TOKEN');
+const IG_ACCOUNT_ID=defineSecret('META_IG_ACCOUNT_ID');
+const ADMIN_UID=defineSecret('LUVIE_ADMIN_UID');
+const REGION='us-central1';
+const TWO_HOURS=2*60*60*1000;
+const GRAPH_VERSION='v23.0';
+const controlRef=db.doc('appConfig/liveControl');
+const liveRef=id=>db.collection('lives').doc(id);
+const adminOnly=req=>{if(!req.auth||req.auth.uid!==ADMIN_UID.value())throw new HttpsError('permission-denied','Acesso administrativo necessário');};
+const validId=s=>typeof s==='string'&&/^[A-Za-z0-9_-]{4,100}$/.test(s);
+const codeFromComment=v=>String(v||'').trim().match(/^#?(\d{1,10})$/)?.[1]||null;
+const info=s=>({id:s.id,...s.data()});
+function safeProduct(p){
+ const codigo=String(p?.codigo||'').trim(),descricao=String(p?.descricao||'').trim(),preco=Number(p?.preco);
+ if(!/^\d{1,10}$/.test(codigo)||!descricao||descricao.length>250||!Number.isFinite(preco)||preco<=0||preco>1000000)throw new HttpsError('invalid-argument','Peça inválida: código, descrição ou preço');
+ return {codigo,descricao,preco,quantidade:1,status:'disponivel',activeReservationId:null};
 }
-function codeFromComment(text) {
-  const value = String(text || '').trim();
-  // Apenas um código numérico isolado (com # opcional), sem frases ou números de telefone.
-  const match = value.match(/^#?(\d{1,10})$/);
-  return match ? match[1] : null;
+function signatureOk(req){
+ const m=String(req.get('x-hub-signature-256')||'').match(/^sha256=([a-f0-9]{64})$/i);
+ if(!m||!req.rawBody)return false;
+ const expected=crypto.createHmac('sha256',APP_SECRET.value()).update(req.rawBody).digest();
+ const actual=Buffer.from(m[1],'hex');
+ return actual.length===expected.length&&crypto.timingSafeEqual(actual,expected);
 }
-function verifyMetaSignature(req) {
-  const header = req.get('x-hub-signature-256') || '';
-  const match = header.match(/^sha256=([a-f0-9]{64})$/i);
-  if (!match || !req.rawBody) return false;
-  const calculated = crypto.createHmac('sha256', APP_SECRET.value()).update(req.rawBody).digest();
-  const incoming = Buffer.from(match[1], 'hex');
-  return incoming.length === calculated.length && crypto.timingSafeEqual(incoming, calculated);
+async function sendPrivateReply(commentId,message){
+ const response=await fetch(`https://graph.instagram.com/${GRAPH_VERSION}/${encodeURIComponent(IG_ACCOUNT_ID.value())}/messages`,{
+  method:'POST',headers:{Authorization:`Bearer ${IG_TOKEN.value()}`,'Content-Type':'application/json'},
+  body:JSON.stringify({recipient:{comment_id:commentId},message:{text:message}})
+ });
+ const data=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(`Meta HTTP ${response.status}: ${JSON.stringify(data).slice(0,400)}`);
+ return data;
 }
-async function sendPrivateReply(commentId, message) {
-  const accountId = IG_ACCOUNT_ID.value();
-  const accessToken = IG_TOKEN.value();
-  if (!accountId || !accessToken) throw new Error('Credenciais Meta ausentes');
-  const result = await fetch(`https://graph.instagram.com/${graphVersion}/${encodeURIComponent(accountId)}/messages`, {
-    method:'POST',
-    headers:{'Authorization':`Bearer ${accessToken}`, 'Content-Type':'application/json'},
-    body:JSON.stringify({recipient:{comment_id:commentId}, message:{text:message}})
-  });
-  const data = await result.json().catch(() => ({}));
-  if (!result.ok) throw new Error(`Meta HTTP ${result.status}: ${JSON.stringify(data).slice(0,500)}`);
-  return data;
-}
-async function reserveComment({commentId, codigo, username, userId, mediaId}) {
-  const eventRef = db.collection('liveEvents').doc(commentId);
-  const productRef = db.collection('products').doc(codigo);
-  const reservationRef = db.collection('reservations').doc(commentId);
-  const result = await db.runTransaction(async tx => {
-    const [eventSnap, productSnap] = await Promise.all([tx.get(eventRef), tx.get(productRef)]);
-    if (eventSnap.exists) return {state:'duplicate'};
-    if (!productSnap.exists) {
-      tx.create(eventRef,{codigo,username,mediaId,state:'unknown_product',createdAt:admin.firestore.FieldValue.serverTimestamp()});
-      return {state:'unknown_product'};
-    }
-    const product = productSnap.data();
-    const quantity = Number(product.quantidade ?? 1);
-    if (!Number.isInteger(quantity) || quantity < 1) {
-      tx.create(eventRef,{codigo,username,mediaId,state:'invalid_stock',createdAt:admin.firestore.FieldValue.serverTimestamp()});
-      return {state:'invalid_stock'};
-    }
-    // Uma única reserva ativa por código neste MVP. Quem chega depois entra na fila.
-    const active = product.activeReservationId || null;
-    const state = active ? 'waiting' : 'reserved';
-    const now = Date.now();
-    const reservation = {
-      commentId,codigo,username:username || '',userId:userId || '',mediaId:mediaId || '',
-      descricao:product.descricao || '',preco:Number(product.preco || 0),state,
-      createdAt:admin.firestore.FieldValue.serverTimestamp(),createdAtMs:now,
-      expiresAtMs:state === 'reserved' ? now + TWO_HOURS : null,
-      messageStatus:'pending'
-    };
-    tx.create(reservationRef,reservation);
-    tx.create(eventRef,{codigo,username,mediaId,state,reservationId:commentId,createdAt:admin.firestore.FieldValue.serverTimestamp()});
-    if (!active) tx.update(productRef,{activeReservationId:commentId,status:'reservado'});
-    return {state,descricao:reservation.descricao,preco:reservation.preco};
-  });
-  return result;
-}
-async function processEvent(value) {
-  const commentId = String(value.id || value.comment_id || '');
-  const codigo = codeFromComment(value.text);
-  if (!commentId || !codigo) return;
-  const username = String(value.from?.username || value.username || '');
-  const userId = String(value.from?.id || value.user_id || '');
-  const mediaId = String(value.media?.id || value.media_id || '');
-  const result = await reserveComment({commentId,codigo,username,userId,mediaId});
-  if (result.state !== 'reserved' && result.state !== 'waiting') return;
-  // Private Reply: apenas uma por comentário e somente durante a live.
-  // Não envia link de pagamento até a integração com Mercado Pago.
-  const message = result.state === 'reserved'
-    ? `Luviê 💗 Sua peça ${codigo} (${result.descricao}) foi reservada! Aguarde as instruções de pagamento da equipe. Prazo de até 2 horas.`
-    : `Luviê 💗 Você entrou na fila da peça ${codigo}. Se ficar disponível, a equipe entrará em contato.`;
-  try {
-    await sendPrivateReply(commentId,message);
-    await db.collection('reservations').doc(commentId).update({messageStatus:'sent'});
-  } catch(err) {
-    console.error('Falha Private Reply:', commentId,err.message);
-    await db.collection('reservations').doc(commentId).update({messageStatus:'failed',messageError:String(err.message).slice(0,300)});
-  }
-}
-exports.instagramWebhook = onRequest({region:REGION, secrets:[APP_SECRET,VERIFY_TOKEN,IG_TOKEN,IG_ACCOUNT_ID],timeoutSeconds:60}, async(req,res) => {
-  if(req.method === 'GET') {
-    const query = req.query;
-    if(query['hub.mode']==='subscribe' && query['hub.verify_token']===VERIFY_TOKEN.value()) {
-      res.status(200).send(String(query['hub.challenge'] || ''));
-    } else res.sendStatus(403);
-    return;
-  }
-  if(req.method !== 'POST') {res.sendStatus(405);return;}
-  if(!verifyMetaSignature(req)) {res.sendStatus(403);return;}
-  // Retornar rápido à Meta; o evento é gravado em transação antes de responder.
-  try {
-    for (const entry of (req.body?.entry || [])) {
-      for(const change of (entry.changes || [])) {
-        if(change.field !== 'live_comments') continue;
-        await processEvent(change.value || {});
-      }
-    }
-    res.sendStatus(200);
-  } catch(err) { console.error(err); res.sendStatus(500); }
-});
-exports.adminReservations = onCall({region:REGION,secrets:[ADMIN_UID]}, async request => {
-  if(!isAdmin(request)) throw new HttpsError('permission-denied','Apenas administrador');
-  const snap = await db.collection('reservations').orderBy('createdAtMs','desc').limit(150).get();
-  return {items:snap.docs.map(d=>({id:d.id,...d.data(),createdAt:null}))};
-});
-exports.expireReservations = onSchedule({schedule:'every 1 minutes',region:REGION},async()=>{
+async function handleComment(value){
+ const commentId=String(value.id||value.comment_id||'');
+ const codigo=codeFromComment(value.text);
+ if(!commentId||!codigo)return;
+ const username=String(value.from?.username||value.username||'').slice(0,120);
+ const userId=String(value.from?.id||value.user_id||'');
+ const mediaId=String(value.media?.id||value.media_id||'');
+ const outcome=await db.runTransaction(async tx=>{
+  const ctrl=await tx.get(controlRef);
+  const activeId=ctrl.data()?.activeLiveId;
+  if(!activeId)return {state:'inactive'};
+  const lref=liveRef(activeId),pRef=lref.collection('products').doc(codigo),rRef=lref.collection('reservations').doc(commentId),eRef=lref.collection('events').doc(commentId);
+  const [live,prod,event]=await Promise.all([tx.get(lref),tx.get(pRef),tx.get(eRef)]);
+  if(!live.exists||live.data().status!=='active')return {state:'inactive'};
+  if(event.exists)return {state:'duplicate'};
+  if(!prod.exists){tx.create(eRef,{codigo,username,mediaId,state:'unknown_product',createdAt:FV.serverTimestamp()});return {state:'unknown_product'};}
+  const p=prod.data();
+  const state=p.activeReservationId?'waiting':'reserved';
   const now=Date.now();
-  const snap=await db.collection('reservations').where('state','==','reserved').where('expiresAtMs','<=',now).limit(100).get();
-  for(const item of snap.docs) {
-    await db.runTransaction(async tx=>{
-      const r=await tx.get(item.ref);
-      if(!r.exists || r.data().state!=='reserved' || r.data().expiresAtMs> Date.now()) return;
-      const productRef=db.collection('products').doc(r.data().codigo);
-      const product=await tx.get(productRef);
-      tx.update(item.ref,{state:'expired'});
-      if(product.exists && product.data().activeReservationId===item.id){
-        tx.update(productRef,{activeReservationId:admin.firestore.FieldValue.delete(),status:'disponivel'});
-      }
-    });
+  const data={commentId,codigo,username,userId,mediaId,descricao:p.descricao,preco:p.preco,state,createdAt:FV.serverTimestamp(),createdAtMs:now,expiresAtMs:null,messageStatus:'pending'};
+  tx.create(rRef,data);
+  tx.create(eRef,{codigo,username,mediaId,state,reservationId:commentId,createdAt:FV.serverTimestamp()});
+  if(state==='reserved')tx.update(pRef,{activeReservationId:commentId,status:'reservado'});
+  return {state,liveId:activeId,descricao:p.descricao};
+ });
+ if(!['reserved','waiting'].includes(outcome.state))return;
+ const message=outcome.state==='reserved'
+  ?`Luviê 💗 Sua peça ${codigo} (${outcome.descricao}) foi reservada! A equipe enviará as instruções de pagamento após a live.`
+  :`Luviê 💗 Você entrou na fila da peça ${codigo}. Se ficar disponível, a equipe entrará em contato.`;
+ const rRef=liveRef(outcome.liveId).collection('reservations').doc(commentId);
+ try{await sendPrivateReply(commentId,message);await rRef.update({messageStatus:'sent'});}
+ catch(err){console.error('Private Reply:',err);await rRef.update({messageStatus:'failed',messageError:String(err.message).slice(0,300)});}
+}
+exports.instagramWebhook=onRequest({region:REGION,secrets:[APP_SECRET,VERIFY_TOKEN,IG_TOKEN,IG_ACCOUNT_ID],timeoutSeconds:60},async(req,res)=>{
+ if(req.method==='GET'){
+  if(req.query['hub.mode']==='subscribe'&&req.query['hub.verify_token']===VERIFY_TOKEN.value())res.status(200).send(String(req.query['hub.challenge']||''));
+  else res.sendStatus(403);
+  return;
+ }
+ if(req.method!=='POST'){res.sendStatus(405);return;}
+ if(!signatureOk(req)){res.sendStatus(403);return;}
+ try{
+  for(const entry of req.body?.entry||[])for(const change of entry.changes||[]){
+   if(change.field==='live_comments')await handleComment(change.value||{});
   }
-  // Próximo candidato é promovido na execução seguinte; o envio de nova DM
-  // NÃO é automático, pois Private Reply só pode ser enviado uma vez e durante a live.
-  const products=await db.collection('products').where('status','==','disponivel').limit(100).get();
-  for(const product of products.docs){
-    const wait=await db.collection('reservations').where('codigo','==',product.id).where('state','==','waiting').orderBy('createdAtMs').limit(1).get();
-    if(wait.empty) continue;
-    const candidate=wait.docs[0];
-    await db.runTransaction(async tx=>{
-      const [p,c]=await Promise.all([tx.get(product.ref),tx.get(candidate.ref)]);
-      if(!p.exists||p.data().activeReservationId||c.data()?.state!=='waiting')return;
-      const now=Date.now();
-      tx.update(product.ref,{activeReservationId:candidate.id,status:'reservado'});
-      tx.update(candidate.ref,{state:'reserved',expiresAtMs:now+TWO_HOURS, promotedAtMs:now,requiresManualContact:true});
-    });
+  res.sendStatus(200);
+ }catch(err){console.error('Webhook:',err);res.sendStatus(500);}
+});
+// O painel só usa funções autenticadas, nunca grava direto no Firestore.
+exports.adminLive=onCall({region:REGION,secrets:[ADMIN_UID],maxInstances:10},async req=>{
+ adminOnly(req);
+ const {action,liveId}=req.data||{};
+ if(action==='list'){
+  const [ls,ctrl]=await Promise.all([db.collection('lives').orderBy('createdAtMs','desc').limit(50).get(),controlRef.get()]);
+  return {lives:ls.docs.map(info),activeLiveId:ctrl.data()?.activeLiveId||null};
+ }
+ if(action==='create'){
+  const date=String(req.data?.date||'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(`${date}T12:00:00Z`)))throw new HttpsError('invalid-argument','Data inválida');
+  const ref=db.collection('lives').doc();
+  await ref.create({date,status:'draft',createdAt:FV.serverTimestamp(),createdAtMs:Date.now(),startedAtMs:null,endedAtMs:null});
+  return {id:ref.id};
+ }
+ if(!validId(liveId))throw new HttpsError('invalid-argument','Live inválida');
+ const ref=liveRef(liveId);
+ if(action==='detail'){
+  const [live,products,reservations]=await Promise.all([ref.get(),ref.collection('products').limit(450).get(),ref.collection('reservations').orderBy('createdAtMs','desc').limit(150).get()]);
+  if(!live.exists)throw new HttpsError('not-found','Live não encontrada');
+  return {live:info(live),products:products.docs.map(info),reservations:reservations.docs.map(info)};
+ }
+ if(action==='import'){
+  const pieces=req.data?.products;
+  if(!Array.isArray(pieces)||pieces.length<1||pieces.length>400)throw new HttpsError('invalid-argument','Envie de 1 a 400 peças por arquivo');
+  const normalized=pieces.map(safeProduct);
+  if(new Set(normalized.map(p=>p.codigo)).size!==normalized.length)throw new HttpsError('invalid-argument','Códigos duplicados no TXT');
+  // Reserva o bloqueio de importação na live para impedir importações concorrentes.
+  await db.runTransaction(async tx=>{
+   const l=await tx.get(ref);
+   if(!l.exists||l.data().status!=='draft')throw new HttpsError('failed-precondition','Importação permitida somente em lives não iniciadas');
+   if(l.data().productsImported)throw new HttpsError('already-exists','Essa live já recebeu um arquivo TXT');
+   tx.update(ref,{productsImported:true,productCount:normalized.length});
+   normalized.forEach(p=>tx.create(ref.collection('products').doc(p.codigo),{...p,createdAt:FV.serverTimestamp()}));
+  });
+  return {count:normalized.length};
+ }
+ if(action==='start'){
+  await db.runTransaction(async tx=>{
+   const [c,l]=await Promise.all([tx.get(controlRef),tx.get(ref)]);
+   if(!l.exists||l.data().status!=='draft'||!l.data().productsImported)throw new HttpsError('failed-precondition','Importe as peças antes de iniciar');
+   if(c.data()?.activeLiveId)throw new HttpsError('failed-precondition','Já existe uma live ativa');
+   tx.set(controlRef,{activeLiveId:liveId,updatedAt:FV.serverTimestamp()},{merge:true});
+   tx.update(ref,{status:'active',startedAtMs:Date.now()});
+  });return {ok:true};
+ }
+ if(action==='end'){
+  const end=Date.now();
+  await db.runTransaction(async tx=>{
+   const [c,l]=await Promise.all([tx.get(controlRef),tx.get(ref)]);
+   if(c.data()?.activeLiveId!==liveId||!l.exists||l.data().status!=='active')throw new HttpsError('failed-precondition','Live não está ativa');
+   tx.update(controlRef,{activeLiveId:null,updatedAt:FV.serverTimestamp()});
+   tx.update(ref,{status:'ended',endedAtMs:end,hasPendingReservations:true});
+  });
+  // Expiração é calculada no agendador a partir de endedAtMs, inclusive para reservas já feitas.
+  return {ok:true,paymentDeadlineMs:end+TWO_HOURS};
+ }
+ if(action==='markSold'){
+  const reservationId=String(req.data?.reservationId||'');
+  if(!reservationId||reservationId.length>200)throw new HttpsError('invalid-argument','Reserva inválida');
+  const rref=ref.collection('reservations').doc(reservationId);
+  await db.runTransaction(async tx=>{
+   const [l,r]=await Promise.all([tx.get(ref),tx.get(rref)]);
+   if(!l.exists||l.data().status!=='ended'||!r.exists||r.data().state!=='reserved')throw new HttpsError('failed-precondition','Reserva não disponível para confirmação');
+   const p=ref.collection('products').doc(r.data().codigo),ps=await tx.get(p);
+   if(!ps.exists||ps.data().activeReservationId!==reservationId)throw new HttpsError('failed-precondition','Reserva não é a atual');
+   tx.update(rref,{state:'sold',soldAtMs:Date.now(),confirmedManually:true});
+   tx.update(p,{status:'vendido',activeReservationId:null});
+  });return {ok:true};
+ }
+ throw new HttpsError('invalid-argument','Ação desconhecida');
+});
+exports.adminReservations=onCall({region:REGION,secrets:[ADMIN_UID]},async req=>{
+ adminOnly(req);
+ const id=req.data?.liveId;
+ if(!validId(id))throw new HttpsError('invalid-argument','Informe a live');
+ const s=await liveRef(id).collection('reservations').orderBy('createdAtMs','desc').limit(150).get();
+ return {items:s.docs.map(info)};
+});
+exports.expireReservations=onSchedule({schedule:'every 1 minutes',region:REGION},async()=>{
+ const now=Date.now();
+ const ended=await db.collection('lives').where('status','==','ended').limit(100).get();
+ for(const live of ended.docs){
+  if(!live.data().endedAtMs||live.data().endedAtMs+TWO_HOURS>now)continue;
+  const products=await live.ref.collection('products').limit(400).get();
+  for(const p of products.docs){
+   if(!p.data().activeReservationId)continue;
+   const current=live.ref.collection('reservations').doc(p.data().activeReservationId);
+   // Consultar fila fora da transação; confirmar novamente o candidato dentro dela.
+   const queue=await live.ref.collection('reservations').where('codigo','==',p.id).limit(400).get();
+   const waiting=queue.docs.filter(s=>s.data().state==='waiting').sort((a,b)=>a.data().createdAtMs-b.data().createdAtMs);
+   await db.runTransaction(async tx=>{
+    const [ps,rs,...ws]=await Promise.all([tx.get(p.ref),tx.get(current),...waiting.slice(0,1).map(x=>tx.get(x.ref))]);
+    if(!ps.exists||ps.data().activeReservationId!==current.id||!rs.exists||rs.data().state!=='reserved')return;
+    const deadline=rs.data().promotedAtMs?rs.data().promotedAtMs+TWO_HOURS:live.data().endedAtMs+TWO_HOURS;
+    if(deadline>Date.now())return;
+    tx.update(current,{state:'expired',expiresAtMs:deadline});
+    const next=ws[0];
+    if(next?.exists&&next.data().state==='waiting'){
+     const time=Date.now();
+     tx.update(next.ref,{state:'reserved',promotedAtMs:time,expiresAtMs:time+TWO_HOURS,requiresManualContact:true});
+     tx.update(p.ref,{activeReservationId:next.id,status:'reservado'});
+    }else tx.update(p.ref,{activeReservationId:null,status:'disponivel'});
+   });
   }
+ }
 });
