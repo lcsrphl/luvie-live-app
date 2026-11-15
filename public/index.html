@@ -1,14 +1,167 @@
 
 <!doctype html>
-<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Luviê Live</title><link rel="stylesheet" href="style.css"></head>
-<body><main>
-<header><h1>Luviê Live</h1><p class="muted">Transmissões, peças e reservas separadas por live</p></header>
-<section id="loginCard" class="card"><h2>Entrar no painel</h2><label for="email">E-mail</label><input id="email" type="email" autocomplete="username"><label for="password">Senha</label><input id="password" type="password" autocomplete="current-password"><button id="login">Entrar</button></section>
-<section id="appCard" class="hidden"><div class="line"><span class="muted" id="userLabel"></span><button class="secondary" id="logout">Sair</button></div>
-<div class="card"><h2>Criar nova live</h2><label for="liveDate">Data da transmissão</label><input type="date" id="liveDate"><button id="createLive">Criar live</button></div>
-<div class="card"><h2>Selecionar live</h2><label for="liveSelect">Transmissões cadastradas</label><select id="liveSelect"></select><button class="secondary" id="refresh">Atualizar</button><p id="liveStatus" class="muted"></p><div class="buttons"><button id="startLive" disabled>Iniciar monitoramento</button><button id="closeSales" disabled>Fechar vendas</button><button id="sendReservations" disabled>Enviar reservas</button><button id="endLive" class="danger" disabled>Encerrar live</button></div><p id="sendProgress" class="muted"></p></div>
-<div class="card"><h2>Peças desta live</h2><p class="muted">Importe um TXT apenas na live selecionada, antes de iniciá-la. Os códigos podem ser reutilizados em outras lives.</p><input type="file" id="file" accept=".txt,text/plain"><div class="line"><strong id="count">0 peças</strong><span id="total"></span></div><div id="preview"></div><div class="buttons"><button id="save" disabled>Cadastrar peças nesta live</button><button id="clear" class="secondary">Limpar</button></div><p id="importNote" class="muted"></p></div>
-<div class="card"><h2>Reservas desta live</h2><p class="muted" id="stats">Aguardando comentários</p><p class="muted">O painel atualiza automaticamente a cada 3 segundos. Confirme uma venda somente após receber o pagamento.</p><div id="reservations"></div></div>
-<div class="card"><h2>Resumos por cliente</h2><p class="muted">Falhas de envio exigem revisão manual para evitar mensagens duplicadas.</p><div id="customers"></div></div>
-</section><p id="message" role="status"></p></main>
-<script src="/__/firebase/8.10.1/firebase-app.js"></script><script src="/__/firebase/8.10.1/firebase-auth.js"></script><script src="/__/firebase/8.10.1/firebase-firestore.js"></script><script src="/__/firebase/8.10.1/firebase-functions.js"></script><script src="/__/firebase/init.js"></script><script src="app.js"></script></body></html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Luviê Live</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1>Luviê Live</h1>
+    <p class="muted">Transmissões, peças e reservas separadas por live</p>
+  </header>
+
+  <section id="loginCard" class="card">
+    <h2>Entrar no painel</h2>
+    <label for="email">E-mail</label>
+    <input id="email" type="email" autocomplete="username">
+    <label for="password">Senha</label>
+    <input id="password" type="password" autocomplete="current-password">
+    <button id="login">Entrar</button>
+  </section>
+
+  <section id="appCard" class="hidden">
+    <div class="line">
+      <span class="muted" id="userLabel"></span>
+      <button class="secondary" id="logout">Sair</button>
+    </div>
+
+    <div class="card">
+      <h2>Criar nova live</h2>
+      <label for="liveDate">Data da transmissão</label>
+      <input type="date" id="liveDate">
+      <button id="createLive">Criar live</button>
+    </div>
+
+    <div class="card">
+      <h2>Selecionar live</h2>
+      <label for="liveSelect">Transmissões cadastradas</label>
+      <select id="liveSelect"></select>
+      <button class="secondary" id="refresh">Atualizar</button>
+      <p id="liveStatus" class="muted"></p>
+
+      <div class="buttons">
+        <button id="startLive" disabled>Iniciar monitoramento</button>
+        <button id="closeSales" disabled>Fechar vendas</button>
+        <button id="sendReservations" disabled>Preparar mensagens</button>
+        <button id="endLive" class="danger" disabled>Encerrar live</button>
+      </div>
+
+      <p id="sendProgress" class="muted"></p>
+    </div>
+
+    <div class="card">
+      <h2>Peças desta live</h2>
+      <p class="muted">
+        Importe um TXT apenas na live selecionada, antes de iniciá-la.
+        Os códigos podem ser reutilizados em outras lives.
+      </p>
+      <input type="file" id="file" accept=".txt,text/plain">
+
+      <div class="line">
+        <strong id="count">0 peças</strong>
+        <span id="total"></span>
+      </div>
+
+      <div id="preview"></div>
+
+      <div class="buttons">
+        <button id="save" disabled>Cadastrar peças nesta live</button>
+        <button id="clear" class="secondary">Limpar</button>
+      </div>
+
+      <p id="importNote" class="muted"></p>
+    </div>
+
+    <div class="card">
+      <h2>Reservas desta live</h2>
+      <p class="muted" id="stats">Aguardando comentários</p>
+      <p class="muted">
+        O painel atualiza automaticamente a cada 3 segundos.
+        Confirme uma venda somente após receber o pagamento.
+      </p>
+      <div id="reservations"></div>
+    </div>
+
+    <div class="card">
+      <h2>Resumos por cliente</h2>
+      <p class="muted">
+        Selecione uma cliente para cadastrar o número,
+        editar o resumo e abrir a conversa no WhatsApp.
+        O envio é manual.
+      </p>
+      <div id="customers"></div>
+    </div>
+
+    <div class="card hidden" id="editorCard">
+      <h2 id="editorTitle">Mensagem da cliente</h2>
+      <p id="editorNote" class="muted"></p>
+
+      <label for="customerPhone">
+        WhatsApp com DDI e DDD (ex.: 5511999999999)
+      </label>
+      <input
+        id="customerPhone"
+        type="tel"
+        inputmode="tel"
+        autocomplete="off"
+        placeholder="5511999999999"
+      >
+
+      <label style="display:flex;align-items:center;gap:8px">
+        <input
+          id="customerOptIn"
+          type="checkbox"
+          style="width:auto"
+        >
+        Cliente autorizou contato pelo WhatsApp
+      </label>
+
+      <div class="buttons">
+        <button id="savePhone" class="secondary">
+          Salvar telefone
+        </button>
+      </div>
+
+      <label for="customerMessage">
+        Mensagem (editável)
+      </label>
+      <textarea
+        id="customerMessage"
+        rows="12"
+        style="width:100%;box-sizing:border-box"
+      ></textarea>
+
+      <div class="buttons">
+        <button id="saveDraft" class="secondary">
+          Salvar texto
+        </button>
+        <button id="openWhatsapp">
+          Abrir no WhatsApp
+        </button>
+        <button id="markContacted" class="secondary">
+          Marcar como enviada
+        </button>
+        <button id="reopenCustomer" class="secondary">
+          Reabrir atendimento
+        </button>
+      </div>
+
+      <p id="editorStatus" class="muted"></p>
+    </div>
+  </section>
+
+  <p id="message" role="status"></p>
+</main>
+
+<script src="/__/firebase/8.10.1/firebase-app.js"></script>
+<script src="/__/firebase/8.10.1/firebase-auth.js"></script>
+<script src="/__/firebase/8.10.1/firebase-firestore.js"></script>
+<script src="/__/firebase/8.10.1/firebase-functions.js"></script>
+<script src="/__/firebase/init.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
